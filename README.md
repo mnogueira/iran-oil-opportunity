@@ -62,10 +62,10 @@ python scripts/probe_mt5.py
 python scripts/collect_mt5_history.py --discover-only
 ```
 
-### 2b. Download CL/Brent history from IB Gateway paper trading on port 7497
+### 2b. Download CL/Brent history from IB Gateway paper trading on port 4002
 
 ```powershell
-python scripts/ib_collect_oil_history.py --port 7497 --bars 1500
+python scripts/ib_collect_oil_history.py --port 4002 --bars 1500
 ```
 
 ### 3. Backtest from a CSV or the bundled reference dataset
@@ -91,7 +91,7 @@ If MT5 is healthy and the account is a demo account, you can switch to `--mode d
 ### 6. Paper trade oil futures directly through IB Gateway
 
 ```powershell
-python scripts/ib_paper_trade_oil.py --port 7497 --once
+python scripts/ib_paper_trade_oil.py --port 4002 --once
 ```
 
 ## Current Status In This Workspace

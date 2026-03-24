@@ -25,7 +25,7 @@ class IBConfig:
     """Interactive Brokers Gateway paper-trading settings."""
 
     host: str = "127.0.0.1"
-    port: int = 7497
+    port: int = 4002
     client_id: int = 260324
     account: str | None = None
     timeout_seconds: float = 15.0

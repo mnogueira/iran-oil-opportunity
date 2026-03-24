@@ -23,8 +23,8 @@ from iran_oil_opportunity.paper import LocalPaperStore, run_paper_step
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Paper trade CL/Brent futures through IB Gateway.")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=7497)
-    parser.add_argument("--client-id", type=int, default=260324)
+    parser.add_argument("--port", type=int, default=4002)
+    parser.add_argument("--client-id", type=int, default=260326)
     parser.add_argument("--account")
     parser.add_argument("--allow-live", action="store_true")
     parser.add_argument("--output-dir", default=".tradebot/paper_oil_ib")

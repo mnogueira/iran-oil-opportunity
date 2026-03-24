@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from math import isfinite
 from typing import Any
 
 import pandas as pd
@@ -37,6 +38,7 @@ class IBGatewayClient(BrokerConnection):
     broker_name = "ib"
 
     _TIMEFRAME_MAP = {
+        "M1": ("1 min", timedelta(minutes=1)),
         "M5": ("5 mins", timedelta(minutes=5)),
         "M15": ("15 mins", timedelta(minutes=15)),
         "M30": ("30 mins", timedelta(minutes=30)),
@@ -136,27 +138,37 @@ class IBGatewayClient(BrokerConnection):
             return pd.DataFrame()
         contract, snapshot = self._resolve_contract(symbol)
         bar_size, bar_delta = self._resolve_timeframe(timeframe)
+        if self._should_chunk_history(bar_delta, count):
+            return self._fetch_rates_chunked(
+                contract,
+                symbol=snapshot.symbol,
+                bar_size=bar_size,
+                bar_delta=bar_delta,
+                count=count,
+            )
         duration = self._duration_from_count(bar_delta, count)
-        bars = self._ib.reqHistoricalData(
+        return self._request_history_frame(
             contract,
-            endDateTime="",
-            durationStr=duration,
-            barSizeSetting=bar_size,
-            whatToShow=self.config.historical_what_to_show,
-            useRTH=False,
-            formatDate=2,
-            keepUpToDate=False,
-            chartOptions=[],
-        )
-        return self._bars_to_frame(bars, symbol=snapshot.symbol).tail(count)
+            symbol=snapshot.symbol,
+            end_date_time="",
+            duration=duration,
+            bar_size=bar_size,
+        ).tail(count)
 
     def get_quote(self, symbol: str) -> QuoteSnapshot:
         self._ensure_connected()
         contract, snapshot = self._resolve_contract(symbol)
         tickers = self._ib.reqTickers(contract)
-        if not tickers:
+        ticker = self._wait_for_ticker_prices(tickers[0] if tickers else None)
+        if ticker is None or self._quote_has_no_prices(ticker):
+            market_data_type = getattr(self._ib, "reqMarketDataType", None)
+            if callable(market_data_type):
+                market_data_type(3)
+                tickers = self._ib.reqTickers(contract)
+                ticker = self._wait_for_ticker_prices(tickers[0] if tickers else None)
+        if ticker is None:
             raise RuntimeError(f"No market data returned for {symbol}.")
-        return self._ticker_to_quote(snapshot.symbol, tickers[0])
+        return self._ticker_to_quote(snapshot.symbol, ticker)
 
     def subscribe_market_data(self, symbol: str, callback) -> MarketDataSubscription:
         self._ensure_connected()
@@ -524,6 +536,8 @@ class IBGatewayClient(BrokerConnection):
                     "barCount": [getattr(bar, "barCount", None) for bar in bars],
                 }
             )
+        if frame is None:
+            return pd.DataFrame()
         if frame.empty:
             return frame
         if "date" in frame.columns:
@@ -554,6 +568,90 @@ class IBGatewayClient(BrokerConnection):
             close=self._coerce_float(getattr(ticker, "close", None)),
             timestamp=timestamp_value,
         )
+
+    @classmethod
+    def _quote_has_no_prices(cls, ticker: Any) -> bool:
+        return all(
+            cls._coerce_float(getattr(ticker, field, None)) is None
+            for field in ("bid", "ask", "last", "close")
+        )
+
+    def _wait_for_ticker_prices(self, ticker: Any, *, timeout_seconds: float = 2.0) -> Any | None:
+        if ticker is None:
+            return None
+        deadline = time.monotonic() + max(timeout_seconds, 0.0)
+        while self._quote_has_no_prices(ticker) and time.monotonic() < deadline:
+            sleep_method = getattr(self._ib, "sleep", None)
+            if callable(sleep_method):
+                sleep_method(0.2)
+            else:
+                time.sleep(0.2)
+        return ticker
+
+    def _request_history_frame(
+        self,
+        contract: Any,
+        *,
+        symbol: str,
+        end_date_time: str,
+        duration: str,
+        bar_size: str,
+    ) -> pd.DataFrame:
+        bars = self._ib.reqHistoricalData(
+            contract,
+            endDateTime=end_date_time,
+            durationStr=duration,
+            barSizeSetting=bar_size,
+            whatToShow=self.config.historical_what_to_show,
+            useRTH=False,
+            formatDate=2,
+            keepUpToDate=False,
+            chartOptions=[],
+        )
+        return self._bars_to_frame(bars, symbol=symbol)
+
+    def _fetch_rates_chunked(
+        self,
+        contract: Any,
+        *,
+        symbol: str,
+        bar_size: str,
+        bar_delta: timedelta,
+        count: int,
+    ) -> pd.DataFrame:
+        frames: list[pd.DataFrame] = []
+        end_date_time = ""
+        remaining = count
+
+        for _ in range(16):
+            duration = "5 D" if remaining > 7_200 else self._duration_from_count(bar_delta, remaining)
+            frame = self._request_history_frame(
+                contract,
+                symbol=symbol,
+                end_date_time=end_date_time,
+                duration=duration,
+                bar_size=bar_size,
+            )
+            if frame.empty:
+                break
+            frames.append(frame)
+            combined = pd.concat(frames).sort_index()
+            combined = combined[~combined.index.duplicated(keep="last")]
+            if len(combined) >= count:
+                return combined.tail(count)
+            oldest = frame.index.min()
+            end_date_time = (oldest - bar_delta).strftime("%Y%m%d %H:%M:%S UTC")
+            remaining = count - len(combined)
+
+        if not frames:
+            return pd.DataFrame()
+        combined = pd.concat(frames).sort_index()
+        combined = combined[~combined.index.duplicated(keep="last")]
+        return combined.tail(count)
+
+    @staticmethod
+    def _should_chunk_history(bar_delta: timedelta, count: int) -> bool:
+        return bar_delta <= timedelta(minutes=1) and count > 10_000
 
     def _build_order(self, request: OrderRequest) -> Any:
         assert self._api is not None
@@ -725,9 +823,10 @@ class IBGatewayClient(BrokerConnection):
         if value in (None, "", "N/A"):
             return None
         try:
-            return float(value)
+            parsed = float(value)
         except (TypeError, ValueError):
             return None
+        return parsed if isfinite(parsed) else None
 
     @staticmethod
     def _import_ib_async() -> Any:

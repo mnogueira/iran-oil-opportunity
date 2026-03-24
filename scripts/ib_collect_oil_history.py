@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -20,8 +21,8 @@ from iran_oil_opportunity.market_data import write_frame
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Download CL/Brent futures history from IB Gateway.")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=7497)
-    parser.add_argument("--client-id", type=int, default=260324)
+    parser.add_argument("--port", type=int, default=4002)
+    parser.add_argument("--client-id", type=int, default=260325)
     parser.add_argument("--account")
     parser.add_argument("--allow-live", action="store_true")
     parser.add_argument("--timeframe", default="H1")
@@ -70,8 +71,8 @@ def main(argv: list[str] | None = None) -> int:
     print(
         json.dumps(
             {
-                "account": account.__dict__,
-                "discovered": {symbol: snapshot.__dict__ for symbol, snapshot in discovered.items()},
+                "account": asdict(account),
+                "discovered": {symbol: asdict(snapshot) for symbol, snapshot in discovered.items()},
                 "series": series,
             },
             indent=2,

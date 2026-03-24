@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import asdict, is_dataclass
 
 from iran_oil_opportunity.backtest import run_backtest
 from iran_oil_opportunity.config import BrokerConfig, RiskConfig, StrategyConfig
@@ -56,11 +57,11 @@ def _broker_config_from_args(args: argparse.Namespace) -> BrokerConfig:
 def handle_probe(args: argparse.Namespace) -> int:
     with MT5Connection(_broker_config_from_args(args)) as connection:
         payload = {
-            "account": connection.account_snapshot().__dict__,
+            "account": asdict(connection.account_snapshot()),
             "terminal": connection.terminal_info(),
             "oil_symbols": discover_candidates(connection.list_symbols()),
         }
-        print(json.dumps(payload, indent=2, default=lambda item: item.__dict__))
+        print(json.dumps(payload, indent=2, default=_serialize_dataclass))
     return 0
 
 
@@ -73,7 +74,7 @@ def handle_discover(args: argparse.Namespace) -> int:
             "primary_preferred_wti": choose_primary_oil_symbol(symbols, preferred="wti"),
             "brent": brent,
             "wti": wti,
-            "classified": [candidate.__dict__ for candidate in discover_candidates(symbols)],
+            "classified": [asdict(candidate) for candidate in discover_candidates(symbols)],
         }
         print(json.dumps(payload, indent=2))
     return 0
@@ -121,6 +122,12 @@ def main(argv: list[str] | None = None) -> int:
         "backtest": handle_backtest,
     }
     return handlers[args.command](args)
+
+
+def _serialize_dataclass(item: object) -> object:
+    if is_dataclass(item):
+        return asdict(item)
+    raise TypeError(f"Object of type {type(item).__name__} is not JSON serializable")
 
 
 if __name__ == "__main__":  # pragma: no cover

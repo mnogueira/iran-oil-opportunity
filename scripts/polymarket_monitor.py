@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
+from dataclasses import asdict
 from pathlib import Path
 
 import pandas as pd
@@ -21,22 +23,30 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Poll Polymarket for oil-war probabilities.")
     parser.add_argument("--markets-output", default="data/processed/polymarket_markets.csv")
     parser.add_argument("--scores-output", default="data/processed/polymarket_scores.csv")
+    parser.add_argument("--poll-seconds", type=int, default=300)
+    parser.add_argument("--once", action="store_true")
     return parser
+
+
+def run_once(args: argparse.Namespace) -> dict[str, object]:
+    rows, summary = summarize_oil_event_bias(fetch_polymarket_markets())
+    markets_target = write_alt_data(pd.DataFrame([asdict(row) for row in rows]), args.markets_output)
+    scores_target = write_alt_data(summary, args.scores_output)
+    return {
+        "markets": len(rows),
+        "markets_output": str(markets_target),
+        "scores_output": str(scores_target),
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    rows, summary = summarize_oil_event_bias(fetch_polymarket_markets())
-    markets_target = write_alt_data(pd.DataFrame([row.__dict__ for row in rows]), args.markets_output)
-    scores_target = write_alt_data(summary, args.scores_output)
-    print(
-        {
-            "markets": len(rows),
-            "markets_output": str(markets_target),
-            "scores_output": str(scores_target),
-        }
-    )
-    return 0
+    while True:
+        summary = run_once(args)
+        print(summary)
+        if args.once:
+            return 0
+        time.sleep(max(30, args.poll_seconds))
 
 
 if __name__ == "__main__":

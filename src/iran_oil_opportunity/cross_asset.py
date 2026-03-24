@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from math import isfinite
 
 import pandas as pd
@@ -190,7 +190,7 @@ def opportunities_to_frame(opportunities: list[CrossAssetOpportunity]) -> pd.Dat
                 "thesis",
             ]
         )
-    return pd.DataFrame([item.__dict__ for item in opportunities])
+    return pd.DataFrame([asdict(item) for item in opportunities])
 
 
 def _infer_frame_source(frame: pd.DataFrame) -> str | None:
