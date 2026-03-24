@@ -50,10 +50,10 @@ class StrategyConfig:
     mean_window: int = 10
     volatility_window: int = 5
     zscore_window: int = 10
-    breakout_return_threshold: float = 0.045
-    breakout_stress_threshold: float = 60.0
-    reversal_stress_threshold: float = 95.0
-    reversal_zscore_threshold: float = 1.35
+    breakout_return_threshold: float = 0.0225
+    breakout_stress_threshold: float = 30.0
+    reversal_stress_threshold: float = 47.5
+    reversal_zscore_threshold: float = 0.675
     breakout_event_floor: float = -0.15
     reversal_event_ceiling: float = 0.10
     event_weight: float = 0.35
