@@ -42,8 +42,13 @@ def run_once(args: argparse.Namespace) -> dict[str, object]:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     while True:
-        summary = run_once(args)
-        print(summary)
+        try:
+            summary = run_once(args)
+            print(summary)
+        except Exception as exc:  # pragma: no cover
+            print({"error": repr(exc), "markets_output": args.markets_output, "scores_output": args.scores_output})
+            if args.once:
+                return 1
         if args.once:
             return 0
         time.sleep(max(30, args.poll_seconds))

@@ -22,13 +22,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Download CL/Brent futures history from IB Gateway.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=4002)
-    parser.add_argument("--client-id", type=int, default=260325)
+    parser.add_argument("--client-id", type=int, default=1)
     parser.add_argument("--account")
     parser.add_argument("--allow-live", action="store_true")
     parser.add_argument("--timeframe", default="H1")
     parser.add_argument("--bars", type=int, default=1500)
     parser.add_argument("--output-dir", default="data/ib")
-    parser.add_argument("--symbols", nargs="*", default=["CL", "BRN"])
+    parser.add_argument("--symbols", nargs="*", default=["CL"])
     return parser
 
 

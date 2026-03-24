@@ -24,7 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Paper trade CL/Brent futures through IB Gateway.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=4002)
-    parser.add_argument("--client-id", type=int, default=260326)
+    parser.add_argument("--client-id", type=int, default=1)
     parser.add_argument("--account")
     parser.add_argument("--allow-live", action="store_true")
     parser.add_argument("--output-dir", default=".tradebot/paper_oil_ib")
@@ -58,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
         if not discovered:
             raise RuntimeError("No CL/Brent futures contracts were discovered via IB Gateway.")
 
-        primary_symbol = args.symbol or ("BRN" if "BRN" in discovered else next(iter(discovered)))
+        primary_symbol = args.symbol or ("CL" if "CL" in discovered else next(iter(discovered)))
         secondary_symbol = args.secondary_symbol
         if secondary_symbol is None:
             secondary_symbol = "CL" if primary_symbol == "BRN" and "CL" in discovered else None

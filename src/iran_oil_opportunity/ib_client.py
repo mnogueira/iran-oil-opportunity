@@ -243,6 +243,7 @@ class IBGatewayClient(BrokerConnection):
         contract, snapshot = self._resolve_contract(request.symbol)
         order = self._build_order(request)
         trade = self._ib.placeOrder(contract, order)
+        self._wait_for_trade_status(trade)
         status = getattr(getattr(trade, "orderStatus", None), "status", None)
         filled = self._coerce_float(getattr(getattr(trade, "orderStatus", None), "filled", None))
         remaining = self._coerce_float(getattr(getattr(trade, "orderStatus", None), "remaining", None))
@@ -454,6 +455,7 @@ class IBGatewayClient(BrokerConnection):
         seen: set[int | str] = set()
         rows: list[Any] = []
         for root in search.roots:
+            root_rows: list[Any] = []
             for exchange in search.exchanges:
                 template = self._api.Future(symbol=root, exchange=exchange, currency=self.config.default_currency)
                 try:
@@ -468,7 +470,12 @@ class IBGatewayClient(BrokerConnection):
                     if key in seen:
                         continue
                     seen.add(key)
-                    rows.append(detail)
+                    root_rows.append(detail)
+                if root_rows:
+                    break
+            if root_rows:
+                rows.extend(root_rows)
+                break
         return rows
 
     def _choose_front_contract(self, details: list[Any]) -> Any | None:
@@ -587,6 +594,19 @@ class IBGatewayClient(BrokerConnection):
             else:
                 time.sleep(0.2)
         return ticker
+
+    def _wait_for_trade_status(self, trade: Any, *, timeout_seconds: float = 5.0) -> None:
+        deadline = time.monotonic() + max(timeout_seconds, 0.0)
+        terminal_statuses = {"Filled", "Cancelled", "ApiCancelled", "Inactive"}
+        while time.monotonic() < deadline:
+            status = str(getattr(getattr(trade, "orderStatus", None), "status", "") or "")
+            if status in terminal_statuses:
+                return
+            sleep_method = getattr(self._ib, "sleep", None)
+            if callable(sleep_method):
+                sleep_method(0.2)
+            else:
+                time.sleep(0.2)
 
     def _request_history_frame(
         self,

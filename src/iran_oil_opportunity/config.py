@@ -26,7 +26,7 @@ class IBConfig:
 
     host: str = "127.0.0.1"
     port: int = 4002
-    client_id: int = 260324
+    client_id: int = 1
     account: str | None = None
     timeout_seconds: float = 15.0
     readonly: bool = False
@@ -38,7 +38,7 @@ class IBConfig:
     historical_what_to_show: str = "TRADES"
     futures_roots: tuple[str, ...] = ("CL", "BRN")
     brent_alias_roots: tuple[str, ...] = ("BRN", "BZ")
-    brent_exchanges: tuple[str, ...] = ("IPE", "ICEEU", "NYMEX")
+    brent_exchanges: tuple[str, ...] = ("NYMEX", "ICEEU", "IPE")
     wti_exchanges: tuple[str, ...] = ("NYMEX",)
 
 
