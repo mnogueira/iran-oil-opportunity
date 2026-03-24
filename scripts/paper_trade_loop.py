@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -12,6 +13,7 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+from iran_oil_opportunity.alternative_data import load_alt_data_frame, merge_alt_data
 from iran_oil_opportunity.config import BrokerConfig, PaperServiceConfig, RiskConfig, StrategyConfig
 from iran_oil_opportunity.discovery import choose_brent_wti_pair, choose_primary_oil_symbol
 from iran_oil_opportunity.market_data import join_spread_context
@@ -28,6 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--poll-seconds", type=int, default=30)
     parser.add_argument("--symbol")
     parser.add_argument("--secondary-symbol")
+    parser.add_argument("--alt-data-csv")
     parser.add_argument("--submit-orders", action="store_true")
     parser.add_argument("--kill-switch-path")
     parser.add_argument("--mt5-login", type=int)
@@ -48,6 +51,7 @@ def main(argv: list[str] | None = None) -> int:
         submit_orders=args.submit_orders,
         symbol=args.symbol,
         secondary_symbol=args.secondary_symbol,
+        alt_data_csv=None if args.alt_data_csv is None else Path(args.alt_data_csv),
     )
     broker_cfg = BrokerConfig(
         login=args.mt5_login,
@@ -63,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     paths.output_dir.mkdir(parents=True, exist_ok=True)
     write_json_atomic(
         paths.status_path,
-        {"runner_state": "started", "started_at": time.strftime("%Y-%m-%dT%H:%M:%S")},
+        {"runner_state": "started", "started_at": datetime.now(tz=UTC).isoformat()},
     )
 
     try:
@@ -103,6 +107,8 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     secondary_frame = primary_frame.iloc[0:0].copy()
                 combined = join_spread_context(primary_frame, secondary_frame)
+                if service_cfg.alt_data_csv is not None and service_cfg.alt_data_csv.exists():
+                    combined = merge_alt_data(combined, load_alt_data_frame(service_cfg.alt_data_csv))
 
                 result = run_paper_step(
                     symbol=primary_symbol,
@@ -115,7 +121,7 @@ def main(argv: list[str] | None = None) -> int:
                     submit_orders=service_cfg.submit_orders,
                 )
                 heartbeat = {
-                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "timestamp": datetime.now(tz=UTC).isoformat(),
                     "runner_state": "running",
                     "symbol": primary_symbol,
                     "secondary_symbol": secondary_symbol,

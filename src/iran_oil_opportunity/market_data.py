@@ -45,6 +45,29 @@ def write_frame(frame: pd.DataFrame, path: str | Path) -> Path:
     return target
 
 
+def load_signal_frame(path: str | Path) -> pd.DataFrame:
+    """Load a timestamp-indexed signal CSV."""
+
+    frame = pd.read_csv(path)
+    for column in ("timestamp", "published_at", "date"):
+        if column in frame.columns:
+            frame[column] = pd.to_datetime(frame[column], utc=True)
+            return frame.set_index(column).sort_index()
+    raise ValueError("Expected signal CSV to contain `timestamp`, `published_at`, or `date`.")
+
+
+def merge_signal_frame(price_frame: pd.DataFrame, signal_frame: pd.DataFrame) -> pd.DataFrame:
+    """Backward-merge signal columns onto a price frame."""
+
+    if signal_frame.empty:
+        return price_frame.copy()
+    merged = price_frame.copy()
+    aligned = signal_frame.sort_index().reindex(merged.index, method="ffill")
+    for column in aligned.columns:
+        merged[column] = aligned[column]
+    return merged
+
+
 def join_spread_context(primary: pd.DataFrame, secondary: pd.DataFrame) -> pd.DataFrame:
     """Join a secondary symbol for spread-aware research."""
 

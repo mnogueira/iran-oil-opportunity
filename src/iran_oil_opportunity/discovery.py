@@ -26,12 +26,26 @@ WTI_ALIASES = (
 OIL_ETF_ALIASES = ("USO", "BNO", "XLE", "OIH")
 OIL_STOCK_ALIASES = ("XOM", "CVX", "PBR", "SHEL", "BP", "COP", "PETR4")
 AIRLINE_ALIASES = ("JETS", "UAL", "DAL", "AAL", "AZUL4", "GOLL4")
+FX_ALIASES = ("USDBRL", "BRL", "BRLUSD", "DEXBZUS")
+GOLD_ALIASES = ("XAUUSD", "GOLD", "XAU")
+DEFENSE_ALIASES = ("LMT", "RTX", "NOC", "GD", "LHX", "BA")
+CRYPTO_ALIASES = ("BTCUSD", "BTC", "XBTUSD", "ETHUSD", "ETH")
+SHIPPING_ALIASES = ("ZIM", "SBLK", "FRO", "STNG", "INSW", "TNK")
+PETROCHEMICAL_ALIASES = ("DOW", "LYB", "EMN", "BRKM5", "BRKM3")
+AGRI_ALIASES = ("WEAT", "CORN", "SOYB", "DBA", "ZW", "ZC", "ZS")
 CATEGORY_PRIORITY = {
     "brent": 0,
     "wti": 1,
-    "oil_etf": 2,
-    "oil_stock": 3,
-    "airline": 4,
+    "gold": 2,
+    "fx": 3,
+    "oil_etf": 4,
+    "oil_stock": 5,
+    "airline": 6,
+    "defense": 7,
+    "shipping": 8,
+    "petrochemical": 9,
+    "agri": 10,
+    "crypto": 11,
 }
 
 
@@ -77,9 +91,16 @@ def discover_candidates(symbols: list[str]) -> list[InstrumentCandidate]:
         for category, aliases in (
             ("brent", BRENT_ALIASES),
             ("wti", WTI_ALIASES),
+            ("gold", GOLD_ALIASES),
+            ("fx", FX_ALIASES),
             ("oil_etf", OIL_ETF_ALIASES),
             ("oil_stock", OIL_STOCK_ALIASES),
             ("airline", AIRLINE_ALIASES),
+            ("defense", DEFENSE_ALIASES),
+            ("shipping", SHIPPING_ALIASES),
+            ("petrochemical", PETROCHEMICAL_ALIASES),
+            ("agri", AGRI_ALIASES),
+            ("crypto", CRYPTO_ALIASES),
         ):
             candidate = _score_alias(symbol, aliases, category=category)
             if candidate is not None:
@@ -111,3 +132,12 @@ def choose_brent_wti_pair(symbols: list[str]) -> tuple[str | None, str | None]:
     brent = next((candidate.symbol for candidate in candidates if candidate.category == "brent"), None)
     wti = next((candidate.symbol for candidate in candidates if candidate.category == "wti"), None)
     return brent, wti
+
+
+def choose_watchlist_symbols(symbols: list[str]) -> dict[str, str]:
+    """Pick one representative symbol per discovered category."""
+
+    selected: dict[str, str] = {}
+    for candidate in discover_candidates(symbols):
+        selected.setdefault(candidate.category, candidate.symbol)
+    return selected

@@ -12,6 +12,7 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+from iran_oil_opportunity.alternative_data import load_alt_data_frame, merge_alt_data
 from iran_oil_opportunity.backtest import run_backtest
 from iran_oil_opportunity.config import RiskConfig, StrategyConfig
 from iran_oil_opportunity.market_data import load_price_frame
@@ -24,6 +25,8 @@ def build_parser() -> argparse.ArgumentParser:
         default="data/reference/fred_brent_ovx_q1_2026.csv",
         help="CSV input with at least date/timestamp and close columns.",
     )
+    parser.add_argument("--alt-data-csv", help="Optional alternative-data CSV keyed by timestamp/date.")
+    parser.add_argument("--bars-per-year", type=int, default=252)
     parser.add_argument("--equity-output", default="artifacts/backtest/equity_curve.csv")
     parser.add_argument("--summary-output", default="artifacts/backtest/summary.json")
     return parser
@@ -32,7 +35,14 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     frame = load_price_frame(args.input)
-    result = run_backtest(frame, strategy_config=StrategyConfig(), risk_config=RiskConfig())
+    if args.alt_data_csv:
+        frame = merge_alt_data(frame, load_alt_data_frame(args.alt_data_csv))
+    result = run_backtest(
+        frame,
+        strategy_config=StrategyConfig(),
+        risk_config=RiskConfig(),
+        bars_per_year=args.bars_per_year,
+    )
 
     equity_target = Path(args.equity_output)
     summary_target = Path(args.summary_output)
@@ -50,6 +60,8 @@ def main(argv: list[str] | None = None) -> int:
         "trades": result.trades,
         "win_rate": result.win_rate,
         "equity_output": str(equity_target),
+        "alt_data_csv": args.alt_data_csv,
+        "bars_per_year": args.bars_per_year,
     }
     summary_target.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
     print(json.dumps(summary, indent=2))

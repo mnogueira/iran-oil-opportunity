@@ -32,6 +32,7 @@ def run_backtest(
     *,
     strategy_config: StrategyConfig | None = None,
     risk_config: RiskConfig | None = None,
+    bars_per_year: int = 252,
 ) -> BacktestResult:
     """Run the event-window strategy on a price frame."""
 
@@ -103,9 +104,9 @@ def run_backtest(
     equity_returns = result_frame["equity"].pct_change().fillna(0.0)
     sample_size = max(len(result_frame), 1)
     total_return = (equity / risk_cfg.initial_equity) - 1.0
-    annualization = 252 / sample_size
+    annualization = bars_per_year / sample_size
     annualized_return = (1.0 + total_return) ** annualization - 1.0 if sample_size > 1 else total_return
-    annualized_volatility = float(equity_returns.std(ddof=0) * np.sqrt(252))
+    annualized_volatility = float(equity_returns.std(ddof=0) * np.sqrt(bars_per_year))
     sharpe = 0.0 if annualized_volatility == 0.0 else annualized_return / annualized_volatility
     max_drawdown = float(result_frame["drawdown"].max()) if not result_frame.empty else 0.0
     win_rate = 0.0 if trades == 0 else wins / trades

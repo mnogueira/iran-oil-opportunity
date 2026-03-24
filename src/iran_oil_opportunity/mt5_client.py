@@ -127,6 +127,11 @@ class MT5Connection:
             raise RuntimeError(f"No tick available for symbol {symbol}")
         order_type = mt5.ORDER_TYPE_BUY if side.upper() == "BUY" else mt5.ORDER_TYPE_SELL
         price = tick.ask if side.upper() == "BUY" else tick.bid
+        filling_mode = getattr(symbol_info, "filling_mode", None)
+        try:
+            resolved_filling_mode = mt5.ORDER_FILLING_RETURN if filling_mode is None else int(filling_mode)
+        except (TypeError, ValueError):
+            resolved_filling_mode = mt5.ORDER_FILLING_RETURN
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": symbol,
@@ -137,7 +142,7 @@ class MT5Connection:
             "magic": self.config.magic_number,
             "comment": "iran_oil_opportunity_demo",
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_RETURN,
+            "type_filling": resolved_filling_mode,
         }
         result = mt5.order_send(request)
         if result is None:

@@ -9,6 +9,7 @@ import signal
 import subprocess
 import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -70,6 +71,7 @@ def _add_runner_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--poll-seconds", type=int, default=30)
     parser.add_argument("--symbol")
     parser.add_argument("--secondary-symbol")
+    parser.add_argument("--alt-data-csv")
     parser.add_argument("--submit-orders", action="store_true")
     parser.add_argument("--mt5-login", type=int)
     parser.add_argument("--mt5-password")
@@ -90,7 +92,9 @@ def discover_pid(paths: PaperServicePaths) -> int | None:
     for payload in (service_state, runner_status):
         raw_pid = payload.get("pid")
         try:
-            return None if raw_pid in (None, "") else int(raw_pid)
+            if raw_pid in (None, ""):
+                continue
+            return int(raw_pid)
         except (TypeError, ValueError):
             continue
     return None
@@ -112,7 +116,7 @@ def build_runner_command(args: argparse.Namespace, paths: PaperServicePaths) -> 
         "--kill-switch-path",
         str(paths.kill_switch_path),
     ]
-    for option_name in ("symbol", "secondary_symbol", "mt5_password", "mt5_server", "mt5_path"):
+    for option_name in ("symbol", "secondary_symbol", "alt_data_csv", "mt5_password", "mt5_server", "mt5_path"):
         option_value = getattr(args, option_name)
         if option_value:
             command.extend([f"--{option_name.replace('_', '-')}", str(option_value)])
@@ -151,6 +155,23 @@ def launch_runner(command: list[str], *, paths: PaperServicePaths) -> subprocess
         stdout_handle.close()
         stderr_handle.close()
     return process
+
+
+def redact_command(command: list[str]) -> list[str]:
+    """Redact secrets before writing the launcher command to disk."""
+
+    redacted: list[str] = []
+    skip_next = False
+    for item in command:
+        if skip_next:
+            skip_next = False
+            continue
+        if item == "--mt5-password":
+            redacted.extend([item, "REDACTED"])
+            skip_next = True
+            continue
+        redacted.append(item)
+    return redacted
 
 
 def wait_for_startup(*, paths: PaperServicePaths, pid: int, timeout_seconds: int) -> dict[str, Any]:
@@ -195,8 +216,8 @@ def handle_start(args: argparse.Namespace) -> int:
         {
             "pid": process.pid,
             "mode": args.mode,
-            "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "command": command,
+            "started_at": datetime.now(tz=UTC).isoformat(),
+            "command": redact_command(command),
             "event_log_path": str(paths.event_log),
             "status_path": str(paths.status_path),
             "heartbeat_path": str(paths.heartbeat_path),

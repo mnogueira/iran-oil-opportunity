@@ -32,6 +32,9 @@ class StrategyConfig:
     breakout_stress_threshold: float = 60.0
     reversal_stress_threshold: float = 95.0
     reversal_zscore_threshold: float = 1.35
+    breakout_event_floor: float = -0.15
+    reversal_event_ceiling: float = 0.10
+    event_weight: float = 0.35
     stop_atr_multiple: float = 1.5
     take_profit_multiple: float = 2.5
     min_stop_pct: float = 0.0125
@@ -61,3 +64,61 @@ class PaperServiceConfig:
     submit_orders: bool = False
     symbol: str | None = None
     secondary_symbol: str | None = None
+    alt_data_csv: Path | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CrossAssetConfig:
+    """Rolling correlation settings for indirect plays."""
+
+    short_window: int = 10
+    long_window: int = 30
+    signal_lookback: int = 3
+    minimum_observations: int = 12
+    expected_move_threshold: float = 0.025
+    divergence_threshold: float = 0.015
+    correlation_break_threshold: float = 0.20
+
+
+@dataclass(frozen=True, slots=True)
+class HeadlineLLMConfig:
+    """Small-model headline translation and scoring settings."""
+
+    api_key_env: str = "OPENAI_API_KEY"
+    model: str = "gpt-5.4-mini"
+    endpoint: str = "https://api.openai.com/v1/chat/completions"
+    timeout_seconds: int = 20
+    max_tokens: int = 300
+    max_workers: int = 4
+    reasoning_effort: str = "low"
+    verbosity: str = "low"
+
+
+@dataclass(frozen=True, slots=True)
+class LocalNewsConfig:
+    """RSS-based local-language news polling settings."""
+
+    output_dir: Path = Path("data/processed/local_news")
+    request_timeout_seconds: int = 15
+    max_items_per_source: int = 20
+    poll_seconds: int = 60
+    half_life_minutes: int = 240
+
+
+@dataclass(frozen=True, slots=True)
+class PolymarketConfig:
+    """Polymarket API polling settings."""
+
+    gamma_base_url: str = "https://gamma-api.polymarket.com"
+    clob_base_url: str = "https://clob.polymarket.com"
+    request_timeout_seconds: int = 15
+    limit: int = 80
+    keywords: tuple[str, ...] = (
+        "iran",
+        "hormuz",
+        "kharg",
+        "ceasefire",
+        "oil",
+        "brent",
+        "wti",
+    )

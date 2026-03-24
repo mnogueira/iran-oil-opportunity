@@ -114,10 +114,9 @@ class LocalPaperStore:
 
     def _append_csv(self, path: Path, row: dict[str, object]) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
-        write_header = not path.exists()
         with path.open("a", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=list(row.keys()))
-            if write_header:
+            if handle.tell() == 0:
                 writer.writeheader()
             writer.writerow(row)
         return path

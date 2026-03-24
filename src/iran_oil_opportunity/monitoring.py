@@ -6,7 +6,7 @@ import json
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -88,7 +88,7 @@ def is_process_alive(pid: int | None) -> bool:
             exit_code = ctypes.c_ulong()
             result = ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
             if result == 0:
-                return True
+                return False
             return int(exit_code.value) == still_active
         finally:
             ctypes.windll.kernel32.CloseHandle(handle)
@@ -109,7 +109,7 @@ def summarize_runtime_health(
 ) -> dict[str, Any]:
     current_status = dict(status_payload or {})
     current_heartbeat = dict(heartbeat_payload or {})
-    current_time = datetime.now() if now is None else now
+    current_time = datetime.now(tz=UTC) if now is None else now
 
     raw_pid = current_status.get("pid", current_heartbeat.get("pid"))
     try:
@@ -155,11 +155,12 @@ def _coerce_timestamp(value: object) -> datetime | None:
     if value in (None, ""):
         return None
     if isinstance(value, datetime):
-        return value
+        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
     if not isinstance(value, str):
         return None
     try:
-        return datetime.fromisoformat(value)
+        parsed = datetime.fromisoformat(value)
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
     except ValueError:
         return None
 

@@ -46,6 +46,9 @@ class IranOilShockStrategy:
         recent_tail = frame["close"].tail(recent_window)
         recent_mean_gap = 0.0 if recent_tail.empty else (close / float(recent_tail.mean())) - 1.0
         atr_pct = float(latest.get("atr_pct", 0.0) or 0.0)
+        event_score = float(latest.get("event_score", 0.0) or 0.0)
+        local_news_score = float(latest.get("local_news_score", 0.0) or 0.0)
+        prediction_market_score = float(latest.get("prediction_market_score", 0.0) or 0.0)
         spread_zscore = latest.get("spread_zscore")
         stop_distance_pct = max(self.config.min_stop_pct, atr_pct * self.config.stop_atr_multiple)
         take_profit_pct = stop_distance_pct * self.config.take_profit_multiple
@@ -69,28 +72,40 @@ class IranOilShockStrategy:
             and return_3 >= self.config.breakout_return_threshold
             and stress >= self.config.breakout_stress_threshold
             and stress_change >= 0.0
+            and event_score >= self.config.breakout_event_floor
         ):
             return SignalDecision(
                 signal=1,
                 regime="shock_breakout",
-                conviction=min(0.95, 0.55 + (stress / 200.0)),
+                conviction=min(0.95, 0.55 + (stress / 200.0) + (self.config.event_weight * max(event_score, 0.0))),
                 stop_distance_pct=stop_distance_pct,
                 take_profit_pct=take_profit_pct,
-                reason=f"fresh_upside_breakout stress={stress:.1f}{spread_hint}",
+                reason=f"fresh_upside_breakout stress={stress:.1f} event={event_score:.2f}{spread_hint}",
             )
 
         if (
             stretched
             and stress >= self.config.reversal_stress_threshold
             and return_1 < 0.0
+            and (
+                event_score <= self.config.reversal_event_ceiling
+                or local_news_score < 0.0
+                or prediction_market_score < 0.0
+            )
         ):
             return SignalDecision(
                 signal=-1,
                 regime="panic_reversal",
-                conviction=min(0.90, 0.60 + (stress / 250.0)),
+                conviction=min(
+                    0.90,
+                    0.60 + (stress / 250.0) + (self.config.event_weight * max(-event_score, 0.0)),
+                ),
                 stop_distance_pct=stop_distance_pct,
                 take_profit_pct=take_profit_pct,
-                reason=f"exhausted_panic_reversal stress={stress:.1f} z={price_zscore:.2f}{spread_hint}",
+                reason=(
+                    f"exhausted_panic_reversal stress={stress:.1f} "
+                    f"z={price_zscore:.2f} event={event_score:.2f}{spread_hint}"
+                ),
             )
 
         if (
