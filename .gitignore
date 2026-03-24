@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.venv/
+.env
+.tradebot/
+artifacts/
+runtime/
+logs/
+service/
+data/mt5/
+data/processed/
+
