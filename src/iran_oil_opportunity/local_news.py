@@ -205,7 +205,7 @@ def score_headlines(headlines: Iterable[RawHeadline], scorer: HeadlineScorer) ->
 def aggregate_headline_scores(
     headlines: Iterable[ScoredHeadline],
     *,
-    frequency: str = "1H",
+    frequency: str = "1h",
 ) -> pd.DataFrame:
     """Bucket scored headlines into a time series for the trading engine."""
 
