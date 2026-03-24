@@ -22,6 +22,9 @@ from iran_oil_opportunity.mt5_client import MT5Connection
 from iran_oil_opportunity.paper import LocalPaperStore, run_paper_step
 
 
+DEFAULT_LOCAL_NEWS_SCORES = REPO_ROOT / "data" / "processed" / "local_news_scores.csv"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the oil paper-trading loop.")
     parser.add_argument("--output-dir", default=".tradebot/paper_oil_mt5")
@@ -41,8 +44,15 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def resolve_alt_data_path(raw_path: str | None) -> Path | None:
+    if raw_path:
+        return Path(raw_path)
+    return DEFAULT_LOCAL_NEWS_SCORES
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    alt_data_path = resolve_alt_data_path(args.alt_data_csv)
     service_cfg = PaperServiceConfig(
         output_dir=Path(args.output_dir),
         timeframe=args.timeframe,
@@ -51,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
         submit_orders=args.submit_orders,
         symbol=args.symbol,
         secondary_symbol=args.secondary_symbol,
-        alt_data_csv=None if args.alt_data_csv is None else Path(args.alt_data_csv),
+        alt_data_csv=alt_data_path,
     )
     broker_cfg = BrokerConfig(
         login=args.mt5_login,

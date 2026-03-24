@@ -20,6 +20,9 @@ from iran_oil_opportunity.market_data import join_spread_context
 from iran_oil_opportunity.paper import LocalPaperStore, run_paper_step
 
 
+DEFAULT_LOCAL_NEWS_SCORES = REPO_ROOT / "data" / "processed" / "local_news_scores.csv"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Paper trade CL/Brent futures through IB Gateway.")
     parser.add_argument("--host", default="127.0.0.1")
@@ -37,6 +40,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--submit-orders", action="store_true")
     parser.add_argument("--once", action="store_true")
     return parser
+
+
+def resolve_alt_data_path(raw_path: str | None) -> Path | None:
+    if raw_path:
+        return Path(raw_path)
+    return DEFAULT_LOCAL_NEWS_SCORES
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -65,9 +74,7 @@ def main(argv: list[str] | None = None) -> int:
             if primary_symbol == "CL" and "BRN" in discovered:
                 secondary_symbol = "BRN"
 
-        alt_frame = None
-        if args.alt_data_csv:
-            alt_frame = load_alt_data_frame(args.alt_data_csv)
+        alt_data_path = resolve_alt_data_path(args.alt_data_csv)
 
         store = LocalPaperStore(output_dir / primary_symbol)
         strategy_cfg = StrategyConfig()
@@ -83,8 +90,8 @@ def main(argv: list[str] | None = None) -> int:
                 secondary_frame = primary_frame.iloc[0:0].copy()
 
             combined = join_spread_context(primary_frame, secondary_frame)
-            if alt_frame is not None and not alt_frame.empty:
-                combined = merge_alt_data(combined, alt_frame)
+            if alt_data_path is not None and alt_data_path.exists():
+                combined = merge_alt_data(combined, load_alt_data_frame(alt_data_path))
 
             result = run_paper_step(
                 symbol=primary_symbol,
