@@ -42,6 +42,8 @@ class CrossAssetOpportunity:
 
     symbol: str
     category: str
+    base_source: str | None
+    asset_source: str | None
     signal: int
     opportunity_score: float
     expected_sign: int
@@ -76,6 +78,7 @@ def analyze_cross_asset_opportunities(
         raise ValueError(f"Base frame for {base_symbol} must contain `close`.")
 
     category_map = categories or classify_symbols(list(frames.keys()))
+    base_source = _infer_frame_source(frames[base_symbol])
     base_close = frames[base_symbol]["close"].sort_index().astype(float)
     base_return_series = base_close.pct_change()
     opportunities: list[CrossAssetOpportunity] = []
@@ -84,6 +87,7 @@ def analyze_cross_asset_opportunities(
         if symbol == base_symbol or frame.empty or "close" not in frame.columns:
             continue
         category = category_map.get(symbol, "unknown")
+        asset_source = _infer_frame_source(frame)
         expected_sign = EXPECTED_SIGN.get(category, 0)
         if expected_sign == 0:
             continue
@@ -138,6 +142,7 @@ def analyze_cross_asset_opportunities(
                 score += 20.0
 
         thesis = (
+            f"base_source={base_source or 'unknown'} asset_source={asset_source or 'unknown'} "
             f"{category} expected_sign={expected_sign:+d} "
             f"oil_move={base_return:.2%} asset_move={asset_return:.2%} "
             f"short_corr={short_corr:.2f} long_corr={long_corr:.2f}"
@@ -146,6 +151,8 @@ def analyze_cross_asset_opportunities(
             CrossAssetOpportunity(
                 symbol=symbol,
                 category=category,
+                base_source=base_source,
+                asset_source=asset_source,
                 signal=signal,
                 opportunity_score=round(score, 3),
                 expected_sign=expected_sign,
@@ -169,6 +176,8 @@ def opportunities_to_frame(opportunities: list[CrossAssetOpportunity]) -> pd.Dat
             columns=[
                 "symbol",
                 "category",
+                "base_source",
+                "asset_source",
                 "signal",
                 "opportunity_score",
                 "expected_sign",
@@ -182,3 +191,15 @@ def opportunities_to_frame(opportunities: list[CrossAssetOpportunity]) -> pd.Dat
             ]
         )
     return pd.DataFrame([item.__dict__ for item in opportunities])
+
+
+def _infer_frame_source(frame: pd.DataFrame) -> str | None:
+    """Infer a single broker/source label from frame metadata."""
+
+    source = frame.attrs.get("broker")
+    if isinstance(source, str) and source:
+        return source
+    if "broker" not in frame.columns:
+        return None
+    unique = frame["broker"].dropna().astype(str).unique()
+    return unique[0] if len(unique) == 1 else None

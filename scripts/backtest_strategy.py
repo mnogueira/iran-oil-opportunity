@@ -19,7 +19,7 @@ from iran_oil_opportunity.market_data import load_price_frame
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Backtest the oil-shock strategy.")
+    parser = argparse.ArgumentParser(description="Backtest the oil-shock strategy on MT5 or IB historical CSVs.")
     parser.add_argument(
         "--input",
         default="data/reference/fred_brent_ovx_q1_2026.csv",

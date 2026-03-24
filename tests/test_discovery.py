@@ -23,6 +23,11 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(brent, "XBRUSD")
         self.assertEqual(wti, "XTIUSD")
 
+    def test_discovers_ib_brent_alias(self) -> None:
+        candidates = discover_candidates(["CL", "BZM6", "PETR4"])
+        self.assertEqual(candidates[0].symbol, "BZM6")
+        self.assertEqual(candidates[0].category, "brent")
+
 
 if __name__ == "__main__":
     unittest.main()

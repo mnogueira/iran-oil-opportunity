@@ -18,7 +18,7 @@ from iran_oil_opportunity.market_data import load_price_frame
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Scan cross-asset oil shock opportunities.")
+    parser = argparse.ArgumentParser(description="Scan cross-asset oil shock opportunities across MT5 and IB CSVs.")
     parser.add_argument("--base-symbol", required=True)
     parser.add_argument("--output", default="artifacts/cross_asset/opportunities.csv")
     parser.add_argument(

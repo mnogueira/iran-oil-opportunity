@@ -10,6 +10,7 @@ from typing import Any
 
 import pandas as pd
 
+from iran_oil_opportunity.broker import BrokerConnection
 from iran_oil_opportunity.config import RiskConfig, StrategyConfig
 from iran_oil_opportunity.features import build_feature_frame
 from iran_oil_opportunity.risk import recommend_mt5_volume, size_notional_fraction
@@ -50,6 +51,7 @@ class PaperSignalRecord:
     """Signal log row."""
 
     timestamp: str
+    broker: str | None
     symbol: str
     signal: int
     regime: str
@@ -67,6 +69,7 @@ class PaperTradeRecord:
     """Trade log row."""
 
     timestamp: str
+    broker: str | None
     symbol: str
     action: str
     target_position: int
@@ -130,7 +133,7 @@ def run_paper_step(
     strategy_config: StrategyConfig,
     risk_config: RiskConfig,
     symbol_info: Any | None = None,
-    broker: Any | None = None,
+    broker: BrokerConnection | None = None,
     submit_orders: bool = False,
 ) -> dict[str, object]:
     """Evaluate one paper-trading step and persist journals."""
@@ -142,6 +145,7 @@ def run_paper_step(
     strategy = IranOilShockStrategy(strategy_config)
     decision = strategy.decide(feature_frame)
     state = store.load_state(risk_config.initial_equity)
+    broker_name = None if broker is None else getattr(broker, "broker_name", None)
 
     if state.last_price is not None and state.position != 0:
         mark_return = (close / state.last_price) - 1.0
@@ -186,13 +190,24 @@ def run_paper_step(
         stop_distance_pct=decision.stop_distance_pct,
         risk_config=risk_config,
     )
-    recommended_volume = recommend_mt5_volume(
-        symbol_info=symbol_info,
-        equity=state.equity,
-        entry_price=close,
-        stop_distance_pct=decision.stop_distance_pct,
-        risk_config=risk_config,
-    )
+    if symbol_info is None and broker is not None:
+        symbol_info = broker.symbol_details(symbol)
+    if broker is not None:
+        recommended_volume = broker.recommend_order_size(
+            symbol=symbol,
+            equity=state.equity,
+            entry_price=close,
+            stop_distance_pct=decision.stop_distance_pct,
+            risk_config=risk_config,
+        )
+    else:
+        recommended_volume = recommend_mt5_volume(
+            symbol_info=symbol_info,
+            equity=state.equity,
+            entry_price=close,
+            stop_distance_pct=decision.stop_distance_pct,
+            risk_config=risk_config,
+        )
     target_fraction = plan.notional_fraction if decision_signal != 0 else 0.0
     action = "hold"
     routed_volume_delta: float | None = None
@@ -206,7 +221,7 @@ def run_paper_step(
             (-1, 1): "reverse_to_long",
         }.get((state.position, decision_signal), "rebalance")
 
-        if submit_orders and broker is not None and recommended_volume is not None:
+        if submit_orders and broker is not None and recommended_volume is not None and recommended_volume > 0.0:
             current_volume = float(broker.get_net_position(symbol))
             desired_volume = float(decision_signal * recommended_volume)
             routed_volume_delta = desired_volume - current_volume
@@ -231,6 +246,7 @@ def run_paper_step(
     store.append_signal(
         PaperSignalRecord(
             timestamp=timestamp,
+            broker=broker_name,
             symbol=symbol,
             signal=decision_signal,
             regime=decision.regime,
@@ -247,6 +263,7 @@ def run_paper_step(
         store.append_trade(
             PaperTradeRecord(
                 timestamp=timestamp,
+                broker=broker_name,
                 symbol=symbol,
                 action=action,
                 target_position=decision_signal,
@@ -260,6 +277,7 @@ def run_paper_step(
 
     return {
         "timestamp": timestamp,
+        "broker": broker_name,
         "symbol": symbol,
         "signal": decision_signal,
         "regime": decision.regime,

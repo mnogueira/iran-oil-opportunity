@@ -9,6 +9,7 @@ description = "MT5 demo-only oil-volatility research and paper-trading toolkit f
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+  "ib_async>=2.1.0",
   "MetaTrader5>=5.0.45",
   "numpy>=2.2.0",
   "pandas>=2.2.3",

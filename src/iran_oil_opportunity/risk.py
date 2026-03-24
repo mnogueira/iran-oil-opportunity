@@ -68,22 +68,50 @@ def recommend_mt5_volume(
     min_volume = float(getattr(symbol_info, "volume_min", 0.0) or 0.0)
     max_volume = float(getattr(symbol_info, "volume_max", 0.0) or 0.0)
     step = float(getattr(symbol_info, "volume_step", 0.0) or 0.0)
-    if min_volume <= 0.0 or max_volume <= 0.0:
+    return recommend_contract_quantity(
+        equity=equity,
+        entry_price=entry_price,
+        stop_distance_pct=stop_distance_pct,
+        risk_config=risk_config,
+        contract_multiplier=contract_size,
+        min_quantity=min_volume,
+        max_quantity=max_volume,
+        quantity_step=step,
+    )
+
+
+def recommend_contract_quantity(
+    *,
+    equity: float,
+    entry_price: float,
+    stop_distance_pct: float,
+    risk_config: RiskConfig,
+    contract_multiplier: float,
+    min_quantity: float,
+    max_quantity: float,
+    quantity_step: float,
+    max_position_notional: float | None = None,
+) -> float | None:
+    """Approximate a broker-native quantity from stop risk and contract specs."""
+
+    if min_quantity <= 0.0 or max_quantity <= 0.0 or contract_multiplier <= 0.0:
         return None
 
     risk_budget = equity * risk_config.risk_per_trade
     stop_distance_value = max(entry_price * max(stop_distance_pct, 1e-6), 1e-6)
-    loss_per_lot = stop_distance_value * contract_size
-    if loss_per_lot <= 0.0:
+    loss_per_contract = stop_distance_value * contract_multiplier
+    if loss_per_contract <= 0.0:
         return None
 
-    raw_volume = risk_budget / loss_per_lot
-    max_notional = equity * risk_config.max_exposure_fraction
-    max_volume_by_notional = max_notional / max(entry_price * contract_size, 1e-6)
+    raw_volume = risk_budget / loss_per_contract
+    notional_cap = equity * risk_config.max_exposure_fraction if max_position_notional is None else max_position_notional
+    max_volume_by_notional = notional_cap / max(entry_price * contract_multiplier, 1e-6)
+    capped_volume = min(raw_volume, max_volume_by_notional, max_quantity)
+    if capped_volume < min_quantity:
+        return 0.0
     return round_volume(
-        min(raw_volume, max_volume_by_notional),
-        min_volume=min_volume,
-        max_volume=max_volume,
-        step=step,
+        capped_volume,
+        min_volume=min_quantity,
+        max_volume=max_quantity,
+        step=quantity_step,
     )
-

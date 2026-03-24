@@ -1,6 +1,6 @@
 # iran-oil-opportunity
 
-Research and demo-only MT5 paper-trading code for the extreme oil volatility created by the March 2026 Iran war and Strait of Hormuz disruption.
+Research and demo-only MT5 plus Interactive Brokers paper-trading code for the extreme oil volatility created by the March 2026 Iran war and Strait of Hormuz disruption.
 
 ## Thesis
 
@@ -10,7 +10,12 @@ This repo is built around one core idea: the oil market is no longer reacting to
 2. Panic fade: short overstretched spikes only after de-escalation signals appear and volatility starts rolling over.
 3. Information lead: monitor Farsi and Arabic headlines before English-language wires fully absorb them, then convert local-language escalation and de-escalation into a tradable event score.
 
-The implementation is MT5-first and demo-only. It discovers broker symbols dynamically, prefers Brent and WTI oil CFDs when available, and mirrors signals through the `MetaTrader5` Python package only if the connected account is a demo account.
+The implementation supports two broker paths:
+
+1. MT5 demo accounts for B3 and any oil CFDs the broker exposes.
+2. Interactive Brokers Gateway paper accounts for direct CL and Brent futures via `ib_async`.
+
+Both broker clients now implement the same execution/data interface, so the strategy and paper-trading logic can run against MT5 or IB without changing the signal code.
 
 ## What Is In This Repo
 
@@ -57,6 +62,12 @@ python scripts/probe_mt5.py
 python scripts/collect_mt5_history.py --discover-only
 ```
 
+### 2b. Download CL/Brent history from IB Gateway paper trading on port 7497
+
+```powershell
+python scripts/ib_collect_oil_history.py --port 7497 --bars 1500
+```
+
 ### 3. Backtest from a CSV or the bundled reference dataset
 
 ```powershell
@@ -76,6 +87,12 @@ python scripts/paper_trade_service.py start --mode shadow
 ```
 
 If MT5 is healthy and the account is a demo account, you can switch to `--mode demo --submit-orders`.
+
+### 6. Paper trade oil futures directly through IB Gateway
+
+```powershell
+python scripts/ib_paper_trade_oil.py --port 7497 --once
+```
 
 ## Current Status In This Workspace
 
@@ -97,4 +114,3 @@ If MT5 is healthy and the account is a demo account, you can switch to `--mode d
 - [docs/research.md](docs/research.md)
 - [docs/operations.md](docs/operations.md)
 - [docs/sources.md](docs/sources.md)
-

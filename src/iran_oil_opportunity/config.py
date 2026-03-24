@@ -21,6 +21,28 @@ class BrokerConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class IBConfig:
+    """Interactive Brokers Gateway paper-trading settings."""
+
+    host: str = "127.0.0.1"
+    port: int = 7497
+    client_id: int = 260324
+    account: str | None = None
+    timeout_seconds: float = 15.0
+    readonly: bool = False
+    require_paper: bool = True
+    reconnect_attempts: int = 3
+    reconnect_backoff_seconds: float = 2.0
+    default_exchange: str = "NYMEX"
+    default_currency: str = "USD"
+    historical_what_to_show: str = "TRADES"
+    futures_roots: tuple[str, ...] = ("CL", "BRN")
+    brent_alias_roots: tuple[str, ...] = ("BRN", "BZ")
+    brent_exchanges: tuple[str, ...] = ("IPE", "ICEEU", "NYMEX")
+    wti_exchanges: tuple[str, ...] = ("NYMEX",)
+
+
+@dataclass(frozen=True, slots=True)
 class StrategyConfig:
     """Oil-shock strategy parameters."""
 

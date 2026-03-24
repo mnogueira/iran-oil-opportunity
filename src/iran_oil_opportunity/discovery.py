@@ -11,6 +11,8 @@ BRENT_ALIASES = (
     "UKOIL",
     "XBRUSD",
     "BRN",
+    "BZ",
+    "COIL",
     "BRENTCMD",
     "BRENTM",
 )
