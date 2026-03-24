@@ -76,44 +76,41 @@ def build_google_news_rss_url(query: str) -> str:
     return f"https://news.google.com/rss/search?q={quote_plus(query)}&hl=en-US&gl=US&ceid=US:en"
 
 
+DEFAULT_NEWS_KEYWORDS = (
+    "iran",
+    "iranian",
+    "iran oil war",
+    "irán",
+    "oil",
+    "crude",
+    "petróleo",
+    "hormuz",
+    "war",
+    "guerra",
+    "ceasefire",
+    "alto el fuego",
+    "tehran",
+    "teherán",
+    "kharg",
+    "sanctions",
+    "sanciones",
+)
+
+
 DEFAULT_LOCAL_NEWS_SOURCES = (
-    NewsSource(
-        "Google News Iran Oil War",
-        "en",
-        build_google_news_rss_url('"Iran oil war" OR "Iran oil" OR "Strait of Hormuz" OR Kharg ceasefire'),
-    ),
-    NewsSource(
-        "Google News Reuters Iran Oil",
-        "en",
-        build_google_news_rss_url('(Iran OR Hormuz OR Kharg) (oil OR crude OR Brent OR WTI) site:reuters.com'),
-    ),
-    NewsSource(
-        "Google News AP Iran Oil",
-        "en",
-        build_google_news_rss_url('(Iran OR Hormuz OR Kharg) (oil OR crude OR Brent OR WTI) site:apnews.com'),
-    ),
-    NewsSource(
-        "NewsAPI Iran Oil",
-        "en",
-        "https://newsapi.org/v2/everything",
-        source_type="newsapi",
-        query='("Iran" OR "Strait of Hormuz" OR Kharg OR ceasefire) AND (oil OR crude OR Brent OR WTI)',
-        api_key_env="NEWSAPI_API_KEY",
-        params=(
-            ("domains", "reuters.com,apnews.com,ft.com,wsj.com,bloomberg.com"),
-            ("sortBy", "publishedAt"),
-            ("searchIn", "title,description"),
-        ),
-    ),
-    NewsSource(
-        "X Iran Oil",
-        "en",
-        "https://api.x.com/2/tweets/search/recent",
-        source_type="x_recent_search",
-        query="(Iran OR Hormuz OR Kharg OR ceasefire) (oil OR crude OR Brent OR WTI) lang:en -is:retweet",
-        api_key_env="X_BEARER_TOKEN",
-        params=(("tweet.fields", "created_at,lang"),),
-    ),
+    NewsSource("Reuters World RSS", "en", "http://feeds.reuters.com/Reuters/worldNews"),
+    NewsSource("Reuters Energy RSS", "en", "http://feeds.reuters.com/reuters/businessNews"),
+    NewsSource("AP News Middle East", "en", "https://rsshub.app/apnews/topics/middle-east"),
+    NewsSource("BBC Middle East", "en", "http://feeds.bbci.co.uk/news/world/middle_east/rss.xml"),
+    NewsSource("Al Jazeera English", "en", "https://www.aljazeera.com/xml/rss/all.xml"),
+    NewsSource("Google News Iran", "en", "https://news.google.com/rss/search?q=iran+oil+war&hl=en"),
+    NewsSource("Al Arabiya English", "en", "https://english.alarabiya.net/tools/rss"),
+    NewsSource("Anadolu Agency World", "en", "https://www.aa.com.tr/en/rss/default?cat=world"),
+    NewsSource("Arab News", "en", "https://www.arabnews.com/rss.xml"),
+    NewsSource("Gulf News", "en", "https://gulfnews.com/rss"),
+    NewsSource("Daily Sabah Middle East", "en", "https://www.dailysabah.com/rssFeed/mideast"),
+    NewsSource("Dawn News", "en", "https://www.dawn.com/feeds/home"),
+    NewsSource("BBC Mundo", "es", "https://feeds.bbci.co.uk/mundo/rss.xml"),
 )
 
 
@@ -123,6 +120,7 @@ def fetch_recent_headlines(
     timeout_seconds: int = 15,
     session: requests.Session | None = None,
     max_items_per_source: int = 20,
+    keywords: Iterable[str] = DEFAULT_NEWS_KEYWORDS,
 ) -> list[RawHeadline]:
     """Fetch headlines from configured RSS feeds and optional JSON APIs."""
 
@@ -131,6 +129,7 @@ def fetch_recent_headlines(
         timeout_seconds=timeout_seconds,
         session=session,
         max_items_per_source=max_items_per_source,
+        keywords=keywords,
     )
     return headlines
 
@@ -141,18 +140,33 @@ def fetch_recent_headlines_with_status(
     timeout_seconds: int = 15,
     session: requests.Session | None = None,
     max_items_per_source: int = 20,
+    keywords: Iterable[str] = DEFAULT_NEWS_KEYWORDS,
 ) -> tuple[list[RawHeadline], list[SourceFetchStatus]]:
     """Fetch headlines together with per-source diagnostics."""
 
     http = session or requests.Session()
     headlines: list[RawHeadline] = []
     statuses: list[SourceFetchStatus] = []
+    normalized_keywords = tuple(keyword.casefold() for keyword in keywords)
     for source in sources:
         source_headlines, status = _fetch_source_headlines(
             source=source,
             http=http,
             timeout_seconds=timeout_seconds,
             max_items_per_source=max_items_per_source,
+        )
+        source_headlines = [
+            headline for headline in source_headlines if _headline_matches_keywords(headline, normalized_keywords)
+        ]
+        status = SourceFetchStatus(
+            source=status.source,
+            source_type=status.source_type,
+            checked_at=status.checked_at,
+            ok=status.ok,
+            headline_count=len(source_headlines),
+            status_code=status.status_code,
+            error=status.error,
+            endpoint=status.endpoint,
         )
         headlines.extend(source_headlines)
         statuses.append(status)
@@ -472,6 +486,13 @@ def _coerce_optional_string(value: object) -> str | None:
     if value in (None, ""):
         return None
     return str(value)
+
+
+def _headline_matches_keywords(headline: RawHeadline, keywords: tuple[str, ...]) -> bool:
+    if not keywords:
+        return True
+    searchable = " ".join(part for part in (headline.title, headline.link or "") if part).casefold()
+    return any(keyword in searchable for keyword in keywords)
 
 
 def _find_link(item: ElementTree.Element) -> str | None:

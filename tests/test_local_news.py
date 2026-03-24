@@ -107,6 +107,33 @@ class LocalNewsTests(unittest.TestCase):
         self.assertFalse(statuses[0].ok)
         self.assertIn("Missing MISSING_X_TOKEN", statuses[0].error or "")
 
+    def test_fetch_recent_headlines_filters_irrelevant_rss_titles(self) -> None:
+        rss_url = "https://example.com/mixed-rss"
+        rss_body = """
+        <rss>
+          <channel>
+            <item>
+              <title>Iran crude flows hit new bottleneck</title>
+              <link>https://example.com/relevant</link>
+              <pubDate>Tue, 24 Mar 2026 18:00:00 GMT</pubDate>
+            </item>
+            <item>
+              <title>Local sports team wins title</title>
+              <link>https://example.com/irrelevant</link>
+              <pubDate>Tue, 24 Mar 2026 18:05:00 GMT</pubDate>
+            </item>
+          </channel>
+        </rss>
+        """
+        session = _FakeSession({rss_url: _FakeResponse(text=rss_body)})
+        headlines, statuses = fetch_recent_headlines_with_status(
+            sources=(NewsSource("RSS", "en", rss_url),),
+            session=session,
+        )
+        self.assertEqual(len(headlines), 1)
+        self.assertEqual(headlines[0].title, "Iran crude flows hit new bottleneck")
+        self.assertEqual(statuses[0].headline_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
