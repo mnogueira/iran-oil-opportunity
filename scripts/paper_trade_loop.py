@@ -13,7 +13,7 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from iran_oil_opportunity.alternative_data import load_alt_data_frame, merge_alt_data
+from iran_oil_opportunity.alternative_data import merge_alt_data, load_combined_alt_data, split_alt_data_paths
 from iran_oil_opportunity.config import BrokerConfig, PaperServiceConfig, RiskConfig, StrategyConfig
 from iran_oil_opportunity.discovery import choose_brent_wti_pair, choose_primary_oil_symbol
 from iran_oil_opportunity.market_data import join_spread_context
@@ -22,7 +22,10 @@ from iran_oil_opportunity.mt5_client import MT5Connection
 from iran_oil_opportunity.paper import LocalPaperStore, run_paper_step
 
 
-DEFAULT_LOCAL_NEWS_SCORES = REPO_ROOT / "data" / "processed" / "local_news_scores.csv"
+DEFAULT_ALT_DATA_PATHS = (
+    REPO_ROOT / "data" / "processed" / "local_news_scores.csv",
+    REPO_ROOT / "data" / "processed" / "polymarket_scores.csv",
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -33,7 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--poll-seconds", type=int, default=30)
     parser.add_argument("--symbol")
     parser.add_argument("--secondary-symbol")
-    parser.add_argument("--alt-data-csv")
+    parser.add_argument("--alt-data-csv", help="Optional alt-data CSV path, or comma-separated paths.")
     parser.add_argument("--submit-orders", action="store_true")
     parser.add_argument("--kill-switch-path")
     parser.add_argument("--mt5-login", type=int)
@@ -44,15 +47,15 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def resolve_alt_data_path(raw_path: str | None) -> Path | None:
-    if raw_path:
-        return Path(raw_path)
-    return DEFAULT_LOCAL_NEWS_SCORES
+def resolve_alt_data_paths(raw_paths: str | None) -> list[Path]:
+    if raw_paths:
+        return split_alt_data_paths(raw_paths)
+    return list(DEFAULT_ALT_DATA_PATHS)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    alt_data_path = resolve_alt_data_path(args.alt_data_csv)
+    alt_data_paths = resolve_alt_data_paths(args.alt_data_csv)
     service_cfg = PaperServiceConfig(
         output_dir=Path(args.output_dir),
         timeframe=args.timeframe,
@@ -61,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
         submit_orders=args.submit_orders,
         symbol=args.symbol,
         secondary_symbol=args.secondary_symbol,
-        alt_data_csv=alt_data_path,
+        alt_data_csv=(None if not alt_data_paths else alt_data_paths[0]),
     )
     broker_cfg = BrokerConfig(
         login=args.mt5_login,
@@ -117,8 +120,9 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     secondary_frame = primary_frame.iloc[0:0].copy()
                 combined = join_spread_context(primary_frame, secondary_frame)
-                if service_cfg.alt_data_csv is not None and service_cfg.alt_data_csv.exists():
-                    combined = merge_alt_data(combined, load_alt_data_frame(service_cfg.alt_data_csv))
+                alt_data_frame = load_combined_alt_data(alt_data_paths)
+                if not alt_data_frame.empty:
+                    combined = merge_alt_data(combined, alt_data_frame)
 
                 result = run_paper_step(
                     symbol=primary_symbol,

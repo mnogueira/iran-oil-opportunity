@@ -115,3 +115,39 @@ def recommend_contract_quantity(
         max_volume=max_quantity,
         step=quantity_step,
     )
+
+
+def scale_order_quantity(
+    quantity: float | None,
+    *,
+    multiplier: float,
+    instrument: Any | None = None,
+) -> float | None:
+    """Scale a broker-native quantity while respecting min/max/step constraints."""
+
+    if quantity is None:
+        return None
+    scaled = max(0.0, float(quantity) * max(0.0, multiplier))
+    min_quantity = _coerce_instrument_value(instrument, "min_quantity", "volume_min")
+    max_quantity = _coerce_instrument_value(instrument, "max_quantity", "volume_max")
+    quantity_step = _coerce_instrument_value(instrument, "quantity_step", "volume_step")
+    if min_quantity is not None and scaled < min_quantity:
+        return 0.0
+    if min_quantity is None or max_quantity is None:
+        return round(scaled, 4)
+    step = quantity_step if quantity_step not in (None, 0.0) else min_quantity
+    return round_volume(scaled, min_volume=min_quantity, max_volume=max_quantity, step=step)
+
+
+def _coerce_instrument_value(instrument: Any | None, *names: str) -> float | None:
+    if instrument is None:
+        return None
+    for name in names:
+        raw_value = getattr(instrument, name, None)
+        if raw_value in (None, ""):
+            continue
+        try:
+            return float(raw_value)
+        except (TypeError, ValueError):
+            continue
+    return None

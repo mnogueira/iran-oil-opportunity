@@ -25,12 +25,15 @@ class IBConfig:
     """Interactive Brokers Gateway paper-trading settings."""
 
     host: str = "127.0.0.1"
-    port: int = 4002
+    port: int = 4001
+    data_port: int = 4001
+    execution_port: int = 4002
     client_id: int = 1
+    execution_client_id: int = 11
     account: str | None = None
     timeout_seconds: float = 15.0
     readonly: bool = False
-    require_paper: bool = True
+    require_paper: bool = False
     reconnect_attempts: int = 3
     reconnect_backoff_seconds: float = 2.0
     default_exchange: str = "NYMEX"
@@ -72,6 +75,7 @@ class RiskConfig:
     max_drawdown: float = 0.12
     max_daily_loss: float = 0.03
     max_consecutive_losses: int = 3
+    loss_cooldown_hours: float = 2.0
     transaction_cost_bps: float = 6.0
 
 

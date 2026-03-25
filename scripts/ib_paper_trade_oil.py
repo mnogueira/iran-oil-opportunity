@@ -13,20 +13,23 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from iran_oil_opportunity.alternative_data import load_alt_data_frame, merge_alt_data
+from iran_oil_opportunity.alternative_data import merge_alt_data, load_combined_alt_data, split_alt_data_paths
 from iran_oil_opportunity.config import IBConfig, RiskConfig, StrategyConfig
 from iran_oil_opportunity.ib_client import IBGatewayClient
 from iran_oil_opportunity.market_data import join_spread_context
 from iran_oil_opportunity.paper import LocalPaperStore, run_paper_step
 
 
-DEFAULT_LOCAL_NEWS_SCORES = REPO_ROOT / "data" / "processed" / "local_news_scores.csv"
+DEFAULT_ALT_DATA_PATHS = (
+    REPO_ROOT / "data" / "processed" / "local_news_scores.csv",
+    REPO_ROOT / "data" / "processed" / "polymarket_scores.csv",
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Paper trade CL/Brent futures through IB Gateway.")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=4002)
+    parser.add_argument("--port", type=int, default=4001)
     parser.add_argument("--client-id", type=int, default=1)
     parser.add_argument("--account")
     parser.add_argument("--allow-live", action="store_true")
@@ -36,26 +39,31 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--poll-seconds", type=int, default=30)
     parser.add_argument("--symbol", help="Canonical root symbol, usually CL or BRN.")
     parser.add_argument("--secondary-symbol", help="Optional spread context symbol, usually BRN or CL.")
-    parser.add_argument("--alt-data-csv")
+    parser.add_argument("--alt-data-csv", help="Optional alt-data CSV path, or comma-separated paths.")
     parser.add_argument("--submit-orders", action="store_true")
     parser.add_argument("--once", action="store_true")
     return parser
 
 
-def resolve_alt_data_path(raw_path: str | None) -> Path | None:
-    if raw_path:
-        return Path(raw_path)
-    return DEFAULT_LOCAL_NEWS_SCORES
+def resolve_alt_data_paths(raw_paths: str | None) -> list[Path]:
+    if raw_paths:
+        return split_alt_data_paths(raw_paths)
+    return list(DEFAULT_ALT_DATA_PATHS)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.submit_orders:
+        raise RuntimeError(
+            "IB order submission is disabled. Use the read-only IB connection for market data and keep paper trades local."
+        )
     client = IBGatewayClient(
         IBConfig(
             host=args.host,
             port=args.port,
             client_id=args.client_id,
             account=args.account,
+            readonly=True,
             require_paper=not args.allow_live,
         )
     )
@@ -74,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
             if primary_symbol == "CL" and "BRN" in discovered:
                 secondary_symbol = "BRN"
 
-        alt_data_path = resolve_alt_data_path(args.alt_data_csv)
+        alt_data_paths = resolve_alt_data_paths(args.alt_data_csv)
 
         store = LocalPaperStore(output_dir / primary_symbol)
         strategy_cfg = StrategyConfig()
@@ -90,8 +98,9 @@ def main(argv: list[str] | None = None) -> int:
                 secondary_frame = primary_frame.iloc[0:0].copy()
 
             combined = join_spread_context(primary_frame, secondary_frame)
-            if alt_data_path is not None and alt_data_path.exists():
-                combined = merge_alt_data(combined, load_alt_data_frame(alt_data_path))
+            alt_data_frame = load_combined_alt_data(alt_data_paths)
+            if not alt_data_frame.empty:
+                combined = merge_alt_data(combined, alt_data_frame)
 
             result = run_paper_step(
                 symbol=primary_symbol,

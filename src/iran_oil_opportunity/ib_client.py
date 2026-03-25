@@ -50,7 +50,8 @@ class IBGatewayClient(BrokerConnection):
     def __init__(self, config: IBConfig):
         self.config = config
         self._api: Any | None = None
-        self._ib: Any | None = None
+        self._ib: Any | None = None  # data connection (live, port 4001)
+        self._ib_exec: Any | None = None  # execution connection (paper, port 4002)
         self._last_error: str | None = None
         self._needs_reconnect = False
         self._resolved_contracts: dict[str, tuple[Any, ContractDetailsSnapshot]] = {}
@@ -58,19 +59,45 @@ class IBGatewayClient(BrokerConnection):
     def connect(self) -> AccountSnapshot:
         if self._ib is not None and self._is_connected():
             snapshot = self.account_snapshot()
-            if self.config.require_paper and not snapshot.demo:
-                raise RuntimeError("Interactive Brokers account does not look like paper trading.")
             return snapshot
 
         self._api = self._import_ib_async()
+        # Connect data port (live account, real-time data)
         self._connect_with_retries()
+        # Connect execution port (paper account) if different
+        if self.config.execution_port != self.config.data_port:
+            self._connect_execution()
         snapshot = self.account_snapshot()
-        if self.config.require_paper and not snapshot.demo:
-            self.disconnect()
-            raise RuntimeError("Interactive Brokers account does not look like paper trading.")
         return snapshot
 
+    def _connect_execution(self) -> None:
+        """Connect to the paper trading port for order execution."""
+        IB = self._api.IB
+        self._ib_exec = IB()
+        try:
+            self._ib_exec.connect(
+                self.config.host,
+                self.config.execution_port,
+                clientId=self.config.execution_client_id,
+                timeout=self.config.timeout_seconds,
+            )
+        except Exception:
+            self._ib_exec = None
+
+    @property
+    def _exec_ib(self) -> Any:
+        """Return execution connection if available, else fall back to data connection."""
+        if self._ib_exec is not None and self._ib_exec.isConnected():
+            return self._ib_exec
+        return self._ib
+
     def disconnect(self) -> None:
+        if self._ib_exec is not None:
+            try:
+                if self._ib_exec.isConnected():
+                    self._ib_exec.disconnect()
+            finally:
+                self._ib_exec = None
         if self._ib is not None:
             try:
                 if self._is_connected():
@@ -205,7 +232,7 @@ class IBGatewayClient(BrokerConnection):
     def positions(self) -> list[PositionSnapshot]:
         self._ensure_connected()
         positions: list[PositionSnapshot] = []
-        for position in self._ib.positions():
+        for position in self._exec_ib.positions():
             contract = getattr(position, "contract", None)
             raw_symbol = str(getattr(contract, "symbol", ""))
             multiplier = self._coerce_float(getattr(contract, "multiplier", None))
@@ -242,7 +269,7 @@ class IBGatewayClient(BrokerConnection):
             raise RuntimeError("IB client is configured in readonly mode.")
         contract, snapshot = self._resolve_contract(request.symbol)
         order = self._build_order(request)
-        trade = self._ib.placeOrder(contract, order)
+        trade = self._exec_ib.placeOrder(contract, order)
         self._wait_for_trade_status(trade)
         status = getattr(getattr(trade, "orderStatus", None), "status", None)
         filled = self._coerce_float(getattr(getattr(trade, "orderStatus", None), "filled", None))
@@ -718,7 +745,7 @@ class IBGatewayClient(BrokerConnection):
         return available_funds >= (estimated_notional * 0.25)
 
     def _account_summary_by_tag(self) -> dict[str, Any]:
-        summary_method = getattr(self._ib, "accountSummary", None)
+        summary_method = getattr(self._exec_ib, "accountSummary", None)
         if summary_method is None:
             return {}
         try:

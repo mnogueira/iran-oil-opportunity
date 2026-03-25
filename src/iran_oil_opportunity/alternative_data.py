@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 
 import pandas as pd
@@ -54,6 +55,40 @@ def combine_alt_data_frames(frames: list[pd.DataFrame]) -> pd.DataFrame:
     for frame in usable[1:]:
         combined = combined.join(frame, how="outer")
     return combined.sort_index()
+
+
+def split_alt_data_paths(paths: str | Path | Iterable[str | Path] | None) -> list[Path]:
+    """Normalize one or many CSV path inputs into a flat path list."""
+
+    if paths is None:
+        return []
+    raw_items = [paths] if isinstance(paths, (str, Path)) else list(paths)
+    normalized: list[Path] = []
+    for item in raw_items:
+        for chunk in str(item).split(","):
+            candidate = chunk.strip()
+            if candidate:
+                normalized.append(Path(candidate))
+    return normalized
+
+
+def load_combined_alt_data(paths: str | Path | Iterable[str | Path] | None) -> pd.DataFrame:
+    """Load and outer-join any existing alternative-data CSVs."""
+
+    frames = [load_alt_data_frame(path) for path in split_alt_data_paths(paths) if Path(path).exists()]
+    return combine_alt_data_frames(frames)
+
+
+def merge_alt_data_paths(
+    price_frame: pd.DataFrame,
+    paths: str | Path | Iterable[str | Path] | None,
+    *,
+    tolerance: str = "12h",
+) -> pd.DataFrame:
+    """Merge one or many alternative-data CSVs into the price frame."""
+
+    combined = load_combined_alt_data(paths)
+    return merge_alt_data(price_frame, combined, tolerance=tolerance)
 
 
 def write_alt_data(frame: pd.DataFrame, path: str | Path) -> Path:

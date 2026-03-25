@@ -13,7 +13,7 @@ import pandas as pd
 from iran_oil_opportunity.broker import BrokerConnection
 from iran_oil_opportunity.config import RiskConfig, StrategyConfig
 from iran_oil_opportunity.features import build_feature_frame
-from iran_oil_opportunity.risk import recommend_mt5_volume, size_notional_fraction
+from iran_oil_opportunity.risk import recommend_mt5_volume, scale_order_quantity, size_notional_fraction
 from iran_oil_opportunity.strategy import IranOilShockStrategy
 
 
@@ -30,6 +30,8 @@ class PaperState:
     daily_start_equity: float
     daily_pnl: float
     consecutive_losses: int
+    halt_reason: str | None
+    halt_until: str | None
 
     @classmethod
     def initial(cls, initial_equity: float) -> PaperState:
@@ -43,6 +45,8 @@ class PaperState:
             daily_start_equity=initial_equity,
             daily_pnl=0.0,
             consecutive_losses=0,
+            halt_reason=None,
+            halt_until=None,
         )
 
 
@@ -102,7 +106,9 @@ class LocalPaperStore:
         if not self.state_path.exists():
             return PaperState.initial(initial_equity)
         payload = json.loads(self.state_path.read_text(encoding="utf-8"))
-        return PaperState(**payload)
+        defaults = asdict(PaperState.initial(initial_equity))
+        defaults.update(payload)
+        return PaperState(**defaults)
 
     def save_state(self, state: PaperState) -> Path:
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -145,6 +151,11 @@ def run_paper_step(
     strategy = IranOilShockStrategy(strategy_config)
     decision = strategy.decide(feature_frame)
     state = store.load_state(risk_config.initial_equity)
+    state = _refresh_risk_state(
+        state,
+        current_timestamp=feature_frame.index[-1],
+        risk_config=risk_config,
+    )
     broker_name = None if broker is None else getattr(broker, "broker_name", None)
 
     if state.last_price is not None and state.position != 0:
@@ -167,16 +178,23 @@ def run_paper_step(
             daily_start_equity=state.daily_start_equity,
             daily_pnl=next_daily_pnl,
             consecutive_losses=loss_streak,
+            halt_reason=state.halt_reason,
+            halt_until=state.halt_until,
         )
 
     drawdown = 1.0 - (state.equity / max(state.peak_equity, 1e-6))
-    halt_reason: str | None = None
-    if drawdown >= risk_config.max_drawdown:
+    current_timestamp = feature_frame.index[-1]
+    halt_reason = _active_halt_reason(state, current_timestamp=current_timestamp)
+    halt_until = state.halt_until
+    if halt_reason is None and drawdown >= risk_config.max_drawdown:
         halt_reason = "max_drawdown"
-    elif abs(state.daily_pnl) >= (risk_config.initial_equity * risk_config.max_daily_loss):
+        halt_until = None
+    elif halt_reason is None and abs(state.daily_pnl) >= (risk_config.initial_equity * risk_config.max_daily_loss):
         halt_reason = "max_daily_loss"
-    elif state.consecutive_losses >= risk_config.max_consecutive_losses:
+        halt_until = _next_session_timestamp(current_timestamp).isoformat()
+    elif halt_reason is None and state.consecutive_losses >= risk_config.max_consecutive_losses:
         halt_reason = "max_consecutive_losses"
+        halt_until = (pd.Timestamp(current_timestamp) + pd.Timedelta(hours=risk_config.loss_cooldown_hours)).isoformat()
 
     if halt_reason is not None:
         decision_signal = 0
@@ -184,6 +202,7 @@ def run_paper_step(
     else:
         decision_signal = decision.signal
         decision_reason = decision.reason
+        halt_until = None
 
     plan = size_notional_fraction(
         equity=state.equity,
@@ -208,7 +227,16 @@ def run_paper_step(
             stop_distance_pct=decision.stop_distance_pct,
             risk_config=risk_config,
         )
-    target_fraction = plan.notional_fraction if decision_signal != 0 else 0.0
+    target_fraction = (
+        min(risk_config.max_exposure_fraction, plan.notional_fraction * decision.size_multiplier)
+        if decision_signal != 0
+        else 0.0
+    )
+    recommended_volume = scale_order_quantity(
+        recommended_volume,
+        multiplier=(decision.size_multiplier if decision_signal != 0 else 0.0),
+        instrument=symbol_info,
+    )
     action = "hold"
     routed_volume_delta: float | None = None
     if decision_signal != state.position or abs(target_fraction - state.position_fraction) > 0.05:
@@ -221,7 +249,7 @@ def run_paper_step(
             (-1, 1): "reverse_to_long",
         }.get((state.position, decision_signal), "rebalance")
 
-        if submit_orders and broker is not None and recommended_volume is not None and recommended_volume > 0.0:
+        if submit_orders and broker is not None and recommended_volume is not None:
             current_volume = float(broker.get_net_position(symbol))
             desired_volume = float(decision_signal * recommended_volume)
             routed_volume_delta = desired_volume - current_volume
@@ -241,6 +269,8 @@ def run_paper_step(
         daily_start_equity=state.daily_start_equity,
         daily_pnl=state.daily_pnl,
         consecutive_losses=state.consecutive_losses,
+        halt_reason=halt_reason,
+        halt_until=halt_until,
     )
     store.save_state(state)
     store.append_signal(
@@ -286,6 +316,63 @@ def run_paper_step(
         "equity": round(state.equity, 2),
         "drawdown": round(drawdown, 4),
         "close": close,
+        "size_multiplier": round(decision.size_multiplier, 4),
+        "halt_reason": halt_reason,
         "recommended_volume": recommended_volume,
         "routed_volume_delta": routed_volume_delta,
     }
+
+
+def _refresh_risk_state(
+    state: PaperState,
+    *,
+    current_timestamp: pd.Timestamp,
+    risk_config: RiskConfig,
+) -> PaperState:
+    current_bar = pd.Timestamp(current_timestamp)
+    last_bar = None if state.last_timestamp is None else pd.Timestamp(state.last_timestamp)
+    if last_bar is not None and last_bar.date() != current_bar.date():
+        return PaperState(
+            equity=state.equity,
+            peak_equity=state.peak_equity,
+            position=state.position,
+            position_fraction=state.position_fraction,
+            last_price=state.last_price,
+            last_timestamp=state.last_timestamp,
+            daily_start_equity=state.equity,
+            daily_pnl=0.0,
+            consecutive_losses=0,
+            halt_reason=None,
+            halt_until=None,
+        )
+    if state.halt_until is None:
+        return state
+    halt_until = pd.Timestamp(state.halt_until)
+    if current_bar >= halt_until and state.position == 0:
+        return PaperState(
+            equity=state.equity,
+            peak_equity=state.peak_equity,
+            position=state.position,
+            position_fraction=state.position_fraction,
+            last_price=state.last_price,
+            last_timestamp=state.last_timestamp,
+            daily_start_equity=state.daily_start_equity,
+            daily_pnl=state.daily_pnl,
+            consecutive_losses=0 if state.halt_reason == "max_consecutive_losses" else state.consecutive_losses,
+            halt_reason=None,
+            halt_until=None,
+        )
+    return state
+
+
+def _active_halt_reason(state: PaperState, *, current_timestamp: pd.Timestamp) -> str | None:
+    if state.halt_reason is None:
+        return None
+    if state.halt_until is None:
+        return state.halt_reason
+    return state.halt_reason if pd.Timestamp(current_timestamp) < pd.Timestamp(state.halt_until) else None
+
+
+def _next_session_timestamp(current_timestamp: pd.Timestamp) -> pd.Timestamp:
+    current_bar = pd.Timestamp(current_timestamp)
+    return current_bar.normalize() + pd.Timedelta(days=1)

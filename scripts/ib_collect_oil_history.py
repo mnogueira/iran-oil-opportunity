@@ -21,7 +21,7 @@ from iran_oil_opportunity.market_data import write_frame
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Download CL/Brent futures history from IB Gateway.")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=4002)
+    parser.add_argument("--port", type=int, default=4001)
     parser.add_argument("--client-id", type=int, default=1)
     parser.add_argument("--account")
     parser.add_argument("--allow-live", action="store_true")

@@ -12,10 +12,16 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from iran_oil_opportunity.alternative_data import load_alt_data_frame, merge_alt_data
+from iran_oil_opportunity.alternative_data import merge_alt_data, load_combined_alt_data, split_alt_data_paths
 from iran_oil_opportunity.backtest import run_backtest
 from iran_oil_opportunity.config import RiskConfig, StrategyConfig
 from iran_oil_opportunity.market_data import load_price_frame
+
+
+DEFAULT_ALT_DATA_PATHS = (
+    REPO_ROOT / "data" / "processed" / "local_news_scores.csv",
+    REPO_ROOT / "data" / "processed" / "polymarket_scores.csv",
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,7 +31,10 @@ def build_parser() -> argparse.ArgumentParser:
         default="data/reference/fred_brent_ovx_q1_2026.csv",
         help="CSV input with at least date/timestamp and close columns.",
     )
-    parser.add_argument("--alt-data-csv", help="Optional alternative-data CSV keyed by timestamp/date.")
+    parser.add_argument(
+        "--alt-data-csv",
+        help="Optional alt-data CSV path, or comma-separated paths keyed by timestamp/date.",
+    )
     parser.add_argument("--bars-per-year", type=int, default=252)
     parser.add_argument("--equity-output", default="artifacts/backtest/equity_curve.csv")
     parser.add_argument("--summary-output", default="artifacts/backtest/summary.json")
@@ -35,8 +44,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     frame = load_price_frame(args.input)
-    if args.alt_data_csv:
-        frame = merge_alt_data(frame, load_alt_data_frame(args.alt_data_csv))
+    alt_data_paths = split_alt_data_paths(args.alt_data_csv) if args.alt_data_csv else list(DEFAULT_ALT_DATA_PATHS)
+    alt_data_frame = load_combined_alt_data(alt_data_paths)
+    if not alt_data_frame.empty:
+        frame = merge_alt_data(frame, alt_data_frame)
     result = run_backtest(
         frame,
         strategy_config=StrategyConfig(),
@@ -60,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
         "trades": result.trades,
         "win_rate": result.win_rate,
         "equity_output": str(equity_target),
-        "alt_data_csv": args.alt_data_csv,
+        "alt_data_csv": ",".join(str(path) for path in alt_data_paths) if alt_data_paths else None,
         "bars_per_year": args.bars_per_year,
     }
     summary_target.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
